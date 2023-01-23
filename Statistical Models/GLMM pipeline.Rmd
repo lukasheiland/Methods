@@ -1,0 +1,78 @@
+---
+title: "GLMM inference pipeline"
+output:
+  tufte::tufte_handout: default
+  tufte::tufte_html: default
+---
+
+```{r include=FALSE}
+library(DHARMa)
+library(lme4)
+library(glmmTMB)
+```
+
+# GLMM Pipeline for inference
+
+## **A) Daten Zentrieren**
+
+## **B) Regression**
+	1. Wissenschaftliche Hypothese in Formelsprache
+	
+	2. Datenskala –> Verteilung/Link
+	
+	3. Blocks –> Random effects
+	
+	4. Offsets:
+		* To deal with the problem of different sampling intensities (area, time), in conjunction with integers (where you can’t divide by sampling intensity, like in continuuos lms). Einfach als predictor mit reinnehmen ist keine gute Idee! Man will Effektgröße 1! glm(insectCount ~ habitat, offset = log(time)) # technical: offset is a predicor with coefficient (effect size) one.
+		* because of link function in poisson:::  e^(habitat) e^(log(intensity)), this leads to just multiplication
+	
+	5. Modell fitten
+    	1. Estimates (bester Schätzer)
+    	2. CI (Schätzer unsicherheit)
+    	3. p-Wert
+
+	6. Check residuals
+	    0. QQ-Plot: S - overdispersion, inverted S - underdispersion
+    	1. Residuen gegen Prediktoren –> Bias -> Formel ist falsch
+    	  plotResiduals(YOURPREDICTOR, simulationOutput$scaledResiduals)
+    	2. Residuen gegen Fitted
+    	3. Residuen gegen simulated Residuen
+    	4. **Residuals against distance (spatial, temporal, phylogenetic) structure ** (Residuals in space and time, Variogram, hypothesis test, e.g. `DHARMa::testSpatialAutocorrelation(simulateResiduals(model))`)
+	
+	7. Fix dispersion problems
+			  1. Over-/Underdispersion
+			      * only in GLMs without explicit dispersion fit!
+			      * (in lm there is no such thing as overdispersion, the fit parameter is 'Residual standard error')
+			      1. Fix 1: Observation-level random effect (effectively inflates the poisson mean to be more variable).
+				    2. Fix 2: Negative binomial distribution
+				    3. Fix 3: zero inflation also leads to overdispersion. Can not be tested by dispersion test anymore! Compare model with zi to the model withoout, e.g. for effects.
+				    
+			  2. Inhomogeneity of variance (Heteroscedasticity)
+			      * Fix: fit variance:
+			          1. GLS weights  with `?varClasses()`: `fit_g <- nlme::gls(Ozone ~ Solar.R, data = airquality[complete.cases(airquality),], weights = varPower(0.2, form = ~ fitted(.)))`
+			          2. glmmTMB dispformula: ` glmmTMB(SiblingNegotiation ~ FoodTreatment * SexParent + (1 | Nest), data = Owls, family = nbinom1, dispformula = ~ FoodTreatment, ziformula = ~ ., offset = log(BroodSize))`
+			      * you could even AIC-select on variance fits (program yourself)!
+			  3. **Residual** correlation structure
+			      1. check for a trend first and remove it by including the distance predictor, e.g. as a spline.
+			      2. fit (some canonical or other) correlation structure:
+			          * spatial: exponential
+			          * phyolgenetic: brownian motion
+			          * temporal: AR1
+			          * ` gls(rate ~ poly(pressure, 4) * QB, data = Dialyzer, corr = corAR1(form = ~ 1 | Subject), weights = varPower(form = ~ pressure))`
+			          * ` glmmTMB(snouter2.1 ~ rain + djungle + exp(point + 0 | id_madeup), family = binomial, data = S)` (something like an observation level random effect)
+		
+			    
+## **C) Modellgüte**
+
+	1. Estimates
+    	* Error (stochastischer Fehler = Varianz)
+    	* Bias (systematischer Fehler)
+	2. CI
+    	* Coverage ()
+	3. p-Wert
+    	* Calibrated = Typ I Fehler sollte nur alpha mal auftreten
+        * z.B. bei falscher Dispersion: Typ I-Fehler != alpha
+    	* Power maximieren
+    	
+
+## **D) Mit Bootstrap kann man die ganze Pipeline hinsichtlich Gütekriterien beurteilen (nur die Regressionstabelle weiß nicht was vorher passiert ist!)**
